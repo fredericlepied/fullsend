@@ -2296,7 +2296,9 @@ func TestBuiltinAgentSelected(t *testing.T) {
 		want  bool
 	}{
 		{"no roles selects every built-in", "code", nil, true},
-		{"empty roles selects every built-in", "code", []string{}, true},
+		{"empty roles selects no built-in", "code", []string{}, false},
+		{"empty roles selects no triage", "triage", []string{}, false},
+		{"empty roles still selects a custom agent", "my-agent", []string{}, true},
 		{"triage role selects triage", "triage", []string{"triage"}, true},
 		{"triage role does not select code", "code", []string{"triage"}, false},
 		{"coder role selects code", "code", []string{"coder"}, true},

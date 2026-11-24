@@ -77,8 +77,9 @@ Connect fullsend to a Jira project so that Jira issue activity — comments, lab
    - Every built-in agent that `agents:` in `.fullsend/config.yaml` does not
      disable with `enabled: false`. When the config sets `roles:` (or setup
      ran with `--agents`), only the built-in agents those roles select are
-     considered: for example `roles: [triage]` leaves out code, and
-     `coder` selects code. An agent a role does not select is never fetched.
+     considered: for example `roles: [triage]` leaves out code, `coder` selects
+     code, and an explicit `roles: []` selects no built-in agent. An agent a
+     role does not select is never fetched.
      The poller resolves it the same way
      `fullsend run` does: from the `fullsend-ai/agents` release tag that
      matches the fullsend release you run, or from `main` for a development

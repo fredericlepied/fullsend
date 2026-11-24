@@ -661,11 +661,12 @@ var builtinAgentRoles = map[string][]string{
 
 // BuiltinAgentSelected reports whether the configured roles (ConfigRoles,
 // the roles: key or `--agents` at setup) select the built-in agent name.
-// An empty roles list means roles are not configured, and every built-in
-// agent is selected. A name that is not a built-in agent is always
-// selected, since roles do not scope custom agents.
+// Only nil roles (the key omitted) means roles are not configured, and every
+// built-in agent is selected. A non-nil empty list is an explicit
+// `roles: []` and selects no built-in agent. A name that is not a built-in
+// agent is always selected, since roles do not scope custom agents.
 func BuiltinAgentSelected(name string, roles []string) bool {
-	if len(roles) == 0 {
+	if roles == nil {
 		return true
 	}
 	enabling, ok := builtinAgentRoles[strings.ToLower(name)]

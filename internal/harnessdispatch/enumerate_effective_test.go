@@ -230,6 +230,27 @@ func TestListEffectiveTriggeredHarnesses_Roles(t *testing.T) {
 		assert.Equal(t, []string{"triage"}, stub.requested, "an unselected built-in is never resolved")
 	})
 
+	t.Run("empty roles selects and fetches no built-in", func(t *testing.T) {
+		dir := t.TempDir()
+		cfg := loadYAMLConfig(t, dir, "version: \"1\"\nroles: []\n")
+		stub := newBuiltinStub(t, triggers)
+		out, err := ListEffectiveTriggeredHarnesses(context.Background(), dir, cfg, nil, stub.resolve)
+		require.NoError(t, err)
+		assert.Empty(t, out)
+		assert.Empty(t, stub.requested, "no built-in is resolved when roles is explicitly empty")
+	})
+
+	t.Run("overlay roles [] over a base that selects roles selects no built-in", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "config.base.yaml"), []byte("version: \"1\"\nroles: [triage, coder]\n"), 0o644))
+		cfg := loadYAMLConfig(t, dir, "version: \"1\"\nroles: []\n")
+		stub := newBuiltinStub(t, triggers)
+		out, err := ListEffectiveTriggeredHarnesses(context.Background(), dir, cfg, nil, stub.resolve)
+		require.NoError(t, err)
+		assert.Empty(t, out)
+		assert.Empty(t, stub.requested)
+	})
+
 	t.Run("roles coder selects code", func(t *testing.T) {
 		dir := t.TempDir()
 		cfg := loadYAMLConfig(t, dir, "version: \"1\"\nroles: [coder]\n")
