@@ -38,14 +38,17 @@ type unmatchedEvent struct {
 
 // annotationEscaper encodes the characters GitHub Actions treats specially
 // in a workflow command message: '%' first (so a literal "%0A" in a value
-// stays visible as text), then CR and LF, and breaks up "::" so a value
-// cannot read as the start of another workflow command.
-var annotationEscaper = strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A", "::", ": :")
+// stays visible as text), then CR and LF. Breaking up "::" is done separately
+// in sanitizeAnnotation, because a non-overlapping replacer leaves "::" in
+// runs of three or more colons.
+var annotationEscaper = strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A")
 
 // sanitizeAnnotation makes a dynamic string safe to embed in a workflow
 // command annotation: control characters (including ANSI escape
-// sequences' ESC) are dropped and the characters annotationEscaper names
-// are encoded. Jira comment commands and label names are user-controlled.
+// sequences' ESC) are dropped, the characters annotationEscaper names are
+// encoded, and "::" is broken up until none remains so a value cannot read
+// as the start of another workflow command. Jira comment commands and label
+// names are user-controlled.
 func sanitizeAnnotation(s string) string {
 	s = strings.Map(func(r rune) rune {
 		if r == '\r' || r == '\n' {
@@ -56,7 +59,11 @@ func sanitizeAnnotation(s string) string {
 		}
 		return r
 	}, s)
-	return annotationEscaper.Replace(s)
+	s = annotationEscaper.Replace(s)
+	for strings.Contains(s, "::") {
+		s = strings.ReplaceAll(s, "::", ": :")
+	}
+	return s
 }
 
 // describeEvent summarizes a normalized event for the no-match warning: its
