@@ -59,7 +59,10 @@ type BuiltinResolver func(ctx context.Context, name string, opts harness.Compose
 // only tunes the agent, ADR 0091) does not replace the built-in harness, so
 // the built-in is listed with the entry's harness: blocks applied. An agent
 // whose last agents: entry disables it is not listed, whether registered
-// or built-in, and each agent is listed at most once.
+// or built-in, and each agent is listed at most once. When the config sets
+// roles:, only the built-in agents those roles select are listed (code is
+// selected by coder); agents registered with a source are not scoped by
+// roles.
 //
 // Unlike ListTriggeredHarnesses, any failure is an error: an agent that
 // cannot be resolved or loaded (registered or built-in) is also logged as an
@@ -75,11 +78,16 @@ func ListEffectiveTriggeredHarnesses(ctx context.Context, configDir string, cfg 
 }
 
 // effectiveBuiltinAgents returns the built-in agents (config.ValidAgentNames)
-// that registered does not already list and that no agents: entry
-// disables, in ValidAgentNames order.
-func effectiveBuiltinAgents(entries []config.AgentEntry, registered []harness.RegisteredAgent) []string {
+// that registered does not already list, that the configured roles select
+// (config.BuiltinAgentSelected) and that no agents: entry disables, in
+// ValidAgentNames order. An unselected built-in is dropped here, before
+// anything resolves or fetches its harness.
+func effectiveBuiltinAgents(entries []config.AgentEntry, registered []harness.RegisteredAgent, roles []string) []string {
 	var out []string
 	for _, name := range config.ValidAgentNames() {
+		if !config.BuiltinAgentSelected(name, roles) {
+			continue
+		}
 		if config.IsAgentExplicitlyDisabled(entries, name) {
 			continue
 		}
@@ -109,7 +117,11 @@ func listTriggeredHarnesses(ctx context.Context, configDir string, cfg config.Co
 		registered = slices.DeleteFunc(registered, func(a harness.RegisteredAgent) bool {
 			return config.IsAgentExplicitlyDisabled(entries, a.Name)
 		})
-		builtins = effectiveBuiltinAgents(entries, registered)
+		var roles []string
+		if pr, ok := cfg.(config.PerRepoConfigReader); ok {
+			roles = pr.ConfigRoles()
+		}
+		builtins = effectiveBuiltinAgents(entries, registered, roles)
 	}
 	if len(registered) == 0 && len(builtins) == 0 {
 		return nil, nil

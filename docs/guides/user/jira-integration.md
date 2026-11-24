@@ -75,7 +75,11 @@ Connect fullsend to a Jira project so that Jira issue activity — comments, lab
    `agents:` entries. Each poll run considers the following agents:
 
    - Every built-in agent that `agents:` in `.fullsend/config.yaml` does not
-     disable with `enabled: false`. The poller resolves it the same way
+     disable with `enabled: false`. When the config sets `roles:` (or setup
+     ran with `--agents`), only the built-in agents those roles select are
+     considered: for example `roles: [triage]` leaves out code, and
+     `coder` selects code. An agent a role does not select is never fetched.
+     The poller resolves it the same way
      `fullsend run` does: from the `fullsend-ai/agents` release tag that
      matches the fullsend release you run, or from `main` for a development
      build. It reads the commit that ref points to at the start of the run.

@@ -134,7 +134,8 @@ func jiraCandidateNames(m *celMatcher) []string {
 // at all, dispatches the built-in triage and code agents from Jira.
 func TestNewCELMatcher_FreshInstallDispatchesBuiltins(t *testing.T) {
 	for name, configYAML := range map[string]string{
-		"roles only":     "version: \"1\"\nroles: [triage, code, review]\n",
+		"roles only":     "version: \"1\"\nroles: [triage, coder, review, fix, retro, prioritize]\n",
+		"roles absent":   "version: \"1\"\n",
 		"no config file": "",
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -156,6 +157,47 @@ func TestNewCELMatcher_FreshInstallDispatchesBuiltins(t *testing.T) {
 			assert.Empty(t, warn.String(), "no startup warning once built-ins are dispatchable")
 		})
 	}
+}
+
+// TestNewCELMatcher_HonorsConfiguredRoles covers the roles: subset: only
+// the built-in agents the roles select are fetched and dispatched, so an
+// unselected built-in that cannot load does not fail the poll.
+func TestNewCELMatcher_HonorsConfiguredRoles(t *testing.T) {
+	t.Run("roles triage dispatches triage but not code", func(t *testing.T) {
+		dir := t.TempDir()
+		writeMatcherConfig(t, dir, "version: \"1\"\nroles: [triage]\n")
+		requested := stubJiraBuiltins(t, nil)
+
+		m, err := newCELMatcher(context.Background(), dir)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"triage"}, *requested, "an unselected built-in is not fetched")
+		assert.Equal(t, []string{"triage"}, jiraCandidateNames(m))
+		assert.Equal(t, []string{"triage"}, matchedAgents(t, m, "/fs-triage"))
+		assert.Empty(t, matchedAgents(t, m, "/fs-code"))
+	})
+
+	t.Run("roles coder dispatches code", func(t *testing.T) {
+		dir := t.TempDir()
+		writeMatcherConfig(t, dir, "version: \"1\"\nroles: [coder]\n")
+		stubJiraBuiltins(t, nil)
+
+		m, err := newCELMatcher(context.Background(), dir)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"code"}, jiraCandidateNames(m))
+		assert.Equal(t, []string{"code"}, matchedAgents(t, m, "/fs-code"))
+		assert.Empty(t, matchedAgents(t, m, "/fs-triage"))
+	})
+
+	t.Run("an explicitly disabled agent stays disabled", func(t *testing.T) {
+		dir := t.TempDir()
+		writeMatcherConfig(t, dir, "version: \"1\"\nroles: [triage, coder]\nagents:\n  - name: code\n    enabled: false\n")
+		requested := stubJiraBuiltins(t, nil)
+
+		m, err := newCELMatcher(context.Background(), dir)
+		require.NoError(t, err)
+		assert.NotContains(t, *requested, "code")
+		assert.Equal(t, []string{"triage"}, jiraCandidateNames(m))
+	})
 }
 
 // TestNewCELMatcher_ShorthandOverrideEntries covers agents: entries with
