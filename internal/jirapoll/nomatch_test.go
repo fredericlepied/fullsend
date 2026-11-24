@@ -191,6 +191,29 @@ func TestWarnNoMatch_MatcherWithoutCandidates(t *testing.T) {
 	}
 }
 
+func TestWarnNoMatch_SanitizesDynamicStrings(t *testing.T) {
+	out := captureAnnotations(t)
+	p := New(nil, &reportingMatcher{}, Options{})
+	p.unmatched = []unmatchedEvent{{
+		issueKey: "PROJ-1",
+		event:    "comment_added /fs-x%0A::error::spoofed\n::set-output name=a::b\x1b[31m",
+	}}
+	p.warnNoMatch(1)
+	got := out.String()
+	if strings.Count(got, "\n") != 1 || !strings.HasSuffix(got, "\n") {
+		t.Errorf("annotation is not a single line: %q", got)
+	}
+	if strings.Contains(got, "\x1b") {
+		t.Errorf("annotation keeps a control character: %q", got)
+	}
+	if strings.Contains(got[len("::warning::"):], "::error::") || strings.Contains(got[len("::warning::"):], "::set-output") {
+		t.Errorf("annotation embeds a workflow command: %q", got)
+	}
+	if !strings.Contains(got, "%250A") || !strings.Contains(got, "%0A") {
+		t.Errorf("annotation does not encode %% and LF: %q", got)
+	}
+}
+
 func TestWarnNoMatch_BoundsEventList(t *testing.T) {
 	out := captureAnnotations(t)
 	p := New(nil, &reportingMatcher{}, Options{})

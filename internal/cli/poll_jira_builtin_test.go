@@ -73,8 +73,8 @@ func stubJiraBuiltins(t *testing.T, triggers map[string]string, unavailable ...s
 	}
 	dir := t.TempDir()
 	requested := &[]string{}
-	orig := newJiraBuiltinResolver
-	newJiraBuiltinResolver = func() harnessdispatch.BuiltinResolver {
+	orig := newJiraBuiltinResolverFn
+	newJiraBuiltinResolverFn = func() harnessdispatch.BuiltinResolver {
 		return func(_ context.Context, name string, opts harness.ComposeOpts) (string, harness.ComposeOpts, bool) {
 			*requested = append(*requested, name)
 			if slices.Contains(unavailable, name) {
@@ -88,7 +88,7 @@ func stubJiraBuiltins(t *testing.T, triggers map[string]string, unavailable ...s
 			return path, opts, true
 		}
 	}
-	t.Cleanup(func() { newJiraBuiltinResolver = orig })
+	t.Cleanup(func() { newJiraBuiltinResolverFn = orig })
 	return requested
 }
 
@@ -257,9 +257,18 @@ func TestNewCELMatcher_BuiltinResolutionFailures(t *testing.T) {
 		writeMatcherConfig(t, dir, "version: \"1\"\n")
 		stubJiraBuiltins(t, nil, "code")
 
+		// An incomplete matcher would advance the checkpoints past events
+		// only the unavailable built-in could match, so the poll fails.
+		_, err := newCELMatcher(context.Background(), dir)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "some agents could not be loaded")
+		assert.Contains(t, err.Error(), "built-in agent code")
+
+		// Once the built-in resolves again, its command dispatches.
+		stubJiraBuiltins(t, nil)
 		m, err := newCELMatcher(context.Background(), dir)
 		require.NoError(t, err)
-		assert.Equal(t, []string{"triage"}, jiraCandidateNames(m))
+		assert.Equal(t, []string{"triage", "code"}, jiraCandidateNames(m))
 	})
 
 	t.Run("every built-in unavailable", func(t *testing.T) {
@@ -343,7 +352,11 @@ func TestAgentsRepoBuiltinResolver_VersionPinned(t *testing.T) {
 
 			dir := filepath.Join(t.TempDir(), ".fullsend")
 			require.NoError(t, os.MkdirAll(dir, 0o755))
-			writeMatcherConfig(t, dir, "version: \"1\"\nallowed_remote_resources:\n  - "+srv.URL+"/\n")
+			// The server serves only the triage and code harnesses; an
+			// unresolvable built-in fails the listing, so disable the rest.
+			writeMatcherConfig(t, dir, "version: \"1\"\nallowed_remote_resources:\n  - "+srv.URL+"/\nagents:\n"+
+				"  - name: review\n    enabled: false\n  - name: fix\n    enabled: false\n"+
+				"  - name: retro\n    enabled: false\n  - name: prioritize\n    enabled: false\n")
 			cfg, err := config.LoadConfig(dir, config.LoadOpts{MissingOK: true})
 			require.NoError(t, err)
 
@@ -387,5 +400,5 @@ func TestAgentsRepoBuiltinResolver_Unresolvable(t *testing.T) {
 }
 
 func TestNewJiraBuiltinResolver_Default(t *testing.T) {
-	assert.NotNil(t, newJiraBuiltinResolver())
+	assert.NotNil(t, newJiraBuiltinResolverFn())
 }

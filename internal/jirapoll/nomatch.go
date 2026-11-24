@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode"
 
 	"github.com/fullsend-ai/fullsend/internal/normevent"
 )
@@ -33,6 +34,29 @@ type CandidateReporter interface {
 type unmatchedEvent struct {
 	issueKey string
 	event    string
+}
+
+// annotationEscaper encodes the characters GitHub Actions treats specially
+// in a workflow command message: '%' first (so a literal "%0A" in a value
+// stays visible as text), then CR and LF, and breaks up "::" so a value
+// cannot read as the start of another workflow command.
+var annotationEscaper = strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A", "::", ": :")
+
+// sanitizeAnnotation makes a dynamic string safe to embed in a workflow
+// command annotation: control characters (including ANSI escape
+// sequences' ESC) are dropped and the characters annotationEscaper names
+// are encoded. Jira comment commands and label names are user-controlled.
+func sanitizeAnnotation(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' {
+			return r
+		}
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+	return annotationEscaper.Replace(s)
 }
 
 // describeEvent summarizes a normalized event for the no-match warning: its
@@ -68,7 +92,7 @@ func (p *Poller) warnNoMatch(selected int) {
 		}
 		considered := "none"
 		if len(agents) > 0 {
-			considered = strings.Join(agents, ", ")
+			considered = sanitizeAnnotation(strings.Join(agents, ", "))
 		}
 		agentsClause = " Agents considered: " + considered + "."
 	}
@@ -78,7 +102,7 @@ func (p *Poller) warnNoMatch(selected int) {
 			events = append(events, fmt.Sprintf("and %d more", len(p.unmatched)-maxNoMatchEvents))
 			break
 		}
-		events = append(events, u.issueKey+" ("+u.event+")")
+		events = append(events, sanitizeAnnotation(u.issueKey+" ("+u.event+")"))
 	}
 	fmt.Fprintf(annotationWriter, "::warning::jira-poll: selected %d issue(s) but no agent matched any of their events, so nothing was dispatched: %s.%s "+
 		"Check that the agent is not disabled under agents: in .fullsend/config.yaml, that its harness trigger matches the event, "+

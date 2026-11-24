@@ -61,9 +61,12 @@ type BuiltinResolver func(ctx context.Context, name string, opts harness.Compose
 // whose last agents: entry disables it is not listed, whether registered
 // or built-in, and each agent is listed at most once.
 //
-// Failures are handled as in ListTriggeredHarnesses: a built-in that cannot
-// be resolved or loaded is logged as an error annotation and skipped, and
-// an error is returned only when no agent at all could be loaded.
+// Unlike ListTriggeredHarnesses, any failure is an error: an agent that
+// cannot be resolved or loaded (registered or built-in) is also logged as an
+// error annotation, but the list is not returned incomplete. A dispatcher
+// that advances its checkpoints past events no agent matched, such as the
+// Jira poller, would otherwise lose the events only the unavailable agent
+// could match. Failing the run lets the next run retry them.
 func ListEffectiveTriggeredHarnesses(ctx context.Context, configDir string, cfg config.ConfigReader, fetchPolicy *fetch.FetchPolicy, builtin BuiltinResolver) ([]TriggeredHarness, error) {
 	if builtin == nil {
 		return nil, fmt.Errorf("built-in agent resolver is required")
@@ -173,9 +176,15 @@ func listTriggeredHarnesses(ctx context.Context, configDir string, cfg config.Co
 	// annotations surface inline in the GitHub Actions UI next to the step
 	// that produced them, while the aggregated error drives dispatch's
 	// non-zero exit and appears in the plain-text CI log/exit trace. Partial
-	// failures (loaded > 0) keep the annotation-only behavior unchanged.
+	// failures (loaded > 0) keep the annotation-only behavior unchanged,
+	// except for the effective list below.
 	if loaded == 0 && len(loadErrs) > 0 {
 		return nil, fmt.Errorf("no agents could be loaded: %w", errors.Join(loadErrs...))
+	}
+	// With a built-in resolver (the effective list) a partial failure is
+	// also an error, so the caller never matches against an incomplete list.
+	if builtin != nil && len(loadErrs) > 0 {
+		return nil, fmt.Errorf("some agents could not be loaded: %w", errors.Join(loadErrs...))
 	}
 	return out, nil
 }

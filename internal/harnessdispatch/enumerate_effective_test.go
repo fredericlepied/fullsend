@@ -167,14 +167,16 @@ agents:
 }
 
 func TestListEffectiveTriggeredHarnesses_ResolveFailures(t *testing.T) {
-	t.Run("partial failure is annotated and skipped", func(t *testing.T) {
+	t.Run("partial failure is annotated and an error", func(t *testing.T) {
 		buf := captureAnnotations(t)
 		dir := t.TempDir()
 		cfg := loadYAMLConfig(t, dir, "version: \"1\"\n")
 		stub := newBuiltinStub(t, map[string]string{"triage": effectiveTestTrigger, "code": effectiveTestTrigger}, "code")
 		out, err := ListEffectiveTriggeredHarnesses(context.Background(), dir, cfg, nil, stub.resolve)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"triage"}, candidateNames(out))
+		require.Error(t, err)
+		assert.Nil(t, out, "an incomplete list is never returned")
+		assert.Contains(t, err.Error(), "some agents could not be loaded")
+		assert.Contains(t, err.Error(), "built-in agent code: harness could not be resolved")
 		assert.Contains(t, buf.String(), "::error::harness dispatch: skipping built-in agent code: its harness could not be resolved")
 	})
 
@@ -201,8 +203,9 @@ func TestListEffectiveTriggeredHarnesses_ResolveFailures(t *testing.T) {
 			return stub.resolve(ctx, name, opts)
 		}
 		out, err := ListEffectiveTriggeredHarnesses(context.Background(), dir, cfg, nil, resolve)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"triage"}, candidateNames(out))
+		require.Error(t, err)
+		assert.Nil(t, out)
+		assert.Contains(t, err.Error(), "some agents could not be loaded")
 		assert.Contains(t, buf.String(), "::error::harness dispatch: skipping agent code: load failed")
 	})
 }

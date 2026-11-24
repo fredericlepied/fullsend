@@ -551,7 +551,7 @@ func newCELMatcher(ctx context.Context, fullsendDir string) (*celMatcher, error)
 	// The effective agents: those registered with a source, plus the
 	// built-in agents the config does not disable or replace, resolved
 	// from the agents repository as fullsend run resolves them (#9503).
-	candidates, err := harnessdispatch.ListEffectiveTriggeredHarnesses(ctx, fullsendDir, cfg, nil, newJiraBuiltinResolver())
+	candidates, err := harnessdispatch.ListEffectiveTriggeredHarnesses(ctx, fullsendDir, cfg, nil, newJiraBuiltinResolverFn())
 	if err != nil {
 		return nil, fmt.Errorf("list triggered harnesses: %w", err)
 	}
@@ -575,10 +575,10 @@ func (m *celMatcher) DispatchCandidates() ([]string, bool) {
 	return names, false
 }
 
-// newJiraBuiltinResolver returns the resolver the Jira matcher loads
-// built-in agents with. It is a variable so tests can resolve built-in
-// harnesses without the network.
-var newJiraBuiltinResolver = func() harnessdispatch.BuiltinResolver {
+// newJiraBuiltinResolverFn returns the resolver the Jira matcher loads
+// built-in agents with. Override in tests to resolve built-in harnesses
+// from local files without the network.
+var newJiraBuiltinResolverFn = func() harnessdispatch.BuiltinResolver {
 	// Unauthenticated, as the agents repository is public, and on the
 	// configured host when GITHUB_SERVER_URL and GITHUB_API_URL agree, as
 	// for fullsend run and dispatch --route.
