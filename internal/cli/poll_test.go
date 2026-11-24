@@ -145,6 +145,8 @@ trigger: |
 	require.NoError(t, err)
 	require.Equal(t, normevent.SystemJira, ev.Source.System)
 
+	// The other built-ins resolve with no trigger, so only code matches.
+	stubJiraBuiltins(t, map[string]string{})
 	m, err := newCELMatcher(context.Background(), dir)
 	require.NoError(t, err)
 	records, err := m.Match(context.Background(), ev)
@@ -154,8 +156,8 @@ trigger: |
 }
 
 // TestWarnNoJiraDispatchCandidates covers the startup warning for a Jira
-// poller that can dispatch nothing (#9503): a config written by setup with
-// roles: and no agents: yields a matcher with zero candidates, which must
+// poller that can dispatch nothing (#9503): a matcher with zero candidates,
+// for example because no built-in or registered agent has a trigger, must
 // not pass silently.
 func TestWarnNoJiraDispatchCandidates(t *testing.T) {
 	writeHarness := func(t *testing.T, dir, body string) {
@@ -170,21 +172,30 @@ image: ghcr.io/fullsend-ai/fullsend-sandbox:latest
 `+body), 0o644))
 	}
 	tests := map[string]struct {
-		config   string
-		trigger  string
-		wantWarn bool
+		config string
+		// builtinTriggers are the built-in harnesses' triggers; nil gives
+		// triage and code their Jira triggers.
+		builtinTriggers map[string]string
+		trigger         string
+		wantWarn        bool
 	}{
-		"roles only, no agents registered": {
-			config:   "version: \"1\"\nroles: [triage, code]\n",
-			wantWarn: true,
+		"roles only, built-in agents dispatchable": {
+			config: "version: \"1\"\nroles: [triage, code]\n",
+		},
+		"roles only, no built-in agent has a trigger": {
+			config:          "version: \"1\"\nroles: [triage, code]\n",
+			builtinTriggers: map[string]string{},
+			wantWarn:        true,
 		},
 		"agent registered without a trigger": {
-			config:   "version: \"1\"\nagents:\n  - name: code\n    source: harness/code.yaml\n",
-			wantWarn: true,
+			config:          "version: \"1\"\nagents:\n  - name: code\n    source: harness/code.yaml\n",
+			builtinTriggers: map[string]string{},
+			wantWarn:        true,
 		},
 		"agent registered with a trigger": {
-			config:  "version: \"1\"\nagents:\n  - name: code\n    source: harness/code.yaml\n",
-			trigger: "trigger: event.source.system == \"jira\"\n",
+			config:          "version: \"1\"\nagents:\n  - name: code\n    source: harness/code.yaml\n",
+			builtinTriggers: map[string]string{},
+			trigger:         "trigger: event.source.system == \"jira\"\n",
 		},
 		"kill switch active": {
 			config: "version: \"1\"\nkill_switch: true\nroles: [triage, code]\n",
@@ -195,6 +206,7 @@ image: ghcr.io/fullsend-ai/fullsend-sandbox:latest
 			dir := t.TempDir()
 			writeHarness(t, dir, tt.trigger)
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(tt.config), 0o644))
+			stubJiraBuiltins(t, tt.builtinTriggers)
 
 			m, err := newCELMatcher(context.Background(), dir)
 			require.NoError(t, err)
@@ -205,9 +217,10 @@ image: ghcr.io/fullsend-ai/fullsend-sandbox:latest
 				return
 			}
 			out := buf.String()
-			assert.True(t, strings.HasPrefix(out, "::warning::jira-poll: no registered agent has a harness trigger"), out)
+			assert.True(t, strings.HasPrefix(out, "::warning::jira-poll: no agent has a harness trigger"), out)
 			assert.Contains(t, out, "agents: in .fullsend/config.yaml")
-			assert.Contains(t, out, "fullsend agent add")
+			assert.Contains(t, out, "enabled: false")
+			assert.NotContains(t, out, "fullsend agent add", "registration is no longer required for built-in agents")
 		})
 	}
 
@@ -781,6 +794,7 @@ func TestCELMatcher_JiraLabelRule(t *testing.T) {
 }
 
 func TestNewCELMatcher_LoadsJiraAuthorization(t *testing.T) {
+	stubJiraBuiltins(t, nil)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(`version: "1"
 authorization:
@@ -829,6 +843,7 @@ authorization:
 }
 
 func TestJiraPollOptions_ForwardsAuthorization(t *testing.T) {
+	stubJiraBuiltins(t, nil)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(`version: "1"
 authorization:
@@ -880,6 +895,7 @@ authorization:
 }
 
 func TestNewCELMatcher_RejectsInvalidAuthorization(t *testing.T) {
+	stubJiraBuiltins(t, nil)
 	tests := map[string]struct {
 		yaml    string
 		wantErr string
@@ -921,6 +937,7 @@ func TestJiraPollAuthorization_EmptyListsStayConfigured(t *testing.T) {
 }
 
 func TestNewCELMatcher_NullListKeysStayConfigured(t *testing.T) {
+	stubJiraBuiltins(t, nil)
 	for name, key := range map[string]string{
 		"bare write":   "write:",
 		"null write":   "write: null",
@@ -942,6 +959,7 @@ func TestNewCELMatcher_NullListKeysStayConfigured(t *testing.T) {
 }
 
 func TestNewCELMatcher_RejectsAliasedMisspelledJiraKey(t *testing.T) {
+	stubJiraBuiltins(t, nil)
 	dir := t.TempDir()
 	yamlText := "version: \"1\"\njira_provider: &jp jira\nauthorization:\n  - provider: *jp\n    lables: allowlist\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yamlText), 0o644))
